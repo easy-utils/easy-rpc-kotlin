@@ -186,3 +186,11 @@ private fun readChunk(it: InputStream): ByteArray? {
     val n = it.read(buf)
     return if (n <= 0) null else buf.copyOf(n)
 }
+
+// Framework type for generated method tables.
+data class EasyRpcMethod(
+    val service: String,
+    val name: String,
+    val path: String,
+    val serverStream: Boolean,
+)
