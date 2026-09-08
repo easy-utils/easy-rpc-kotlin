@@ -194,3 +194,37 @@ data class EasyRpcMethod(
     val path: String,
     val serverStream: Boolean,
 )
+
+
+fun kServer(specs: List<EasyRpcMethod>, reg: ServerRegistryK) = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(18888), 0).apply {
+    for (s in specs) {
+        createContext(s.path) { exch ->
+            val body = exch.requestBody.readBytes()
+            val kind = if ((exch.requestHeaders.getFirst("Content-Type") ?: "").startsWith("application/json")) "json" else "proto"
+            if (s.serverStream) {
+                val h = reg.stream[s.name]
+                if (h == null) { exch.sendResponseHeaders(404, -1); exch.close(); return@createContext }
+                exch.responseHeaders.add("Content-Type", if (kind=="json") "application/connect+json" else "application/connect+proto")
+                val chunks = mutableListOf<ByteArray>()
+                h(kind, body, { chunks.add(it) })
+                var total = 0; for (c in chunks) total += 5 + c.size
+                val out = ByteArray(total); var off=0
+                for (c in chunks) { val fr=frame(c); out.copyInto(out, off, 0); off+=fr.size }
+                exch.sendResponseHeaders(200, total.toLong())
+                exch.responseBody.write(out); exch.responseBody.close(); exch.close()
+            } else {
+                val h = reg.unary[s.name]
+                if (h == null) { exch.sendResponseHeaders(404, -1); exch.close(); return@createContext }
+                exch.responseHeaders.add("Content-Type", if (kind=="json") "application/json" else "application/proto")
+                try { val out = h(kind, body); exch.sendResponseHeaders(200, out.size.toLong()); exch.responseBody.write(out) }
+                catch (e: Exception) { exch.sendResponseHeaders(500, -1) }
+                exch.responseBody.close(); exch.close()
+            }
+        }
+    }
+}
+
+class ServerRegistryK {
+    val unary = mutableMapOf<String, (String, ByteArray) -> ByteArray>()
+    val stream = mutableMapOf<String, (String, ByteArray, (ByteArray) -> Unit) -> Unit>()
+}

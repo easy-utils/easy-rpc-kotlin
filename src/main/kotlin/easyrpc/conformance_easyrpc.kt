@@ -8,24 +8,24 @@ import kotlinx.coroutines.flow.flow
 
 class ConformanceServiceClient(private val t: Transport) {
   suspend fun health(req: HealthRequest): HealthResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Health", body = req.toByteArray()))
+    val res = t.send(Request(url = "/v1/health", body = req.toByteArray()))
     res.error?.let{ throw it }
     return HealthResponse.parseFrom(res.body)
   }
 
   suspend fun echo(req: EchoRequest): EchoResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Echo", body = req.toByteArray()))
+    val res = t.send(Request(url = "/v1/echo", body = req.toByteArray()))
     res.error?.let{ throw it }
     return EchoResponse.parseFrom(res.body)
   }
 
   fun count(req: CountRequest): Flow<CountResponse> = flow {
-    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/Count", body = req.toByteArray()))
+    val st = t.openStream(Request(url = "/v1/count", body = req.toByteArray()))
     while (true) { val p = st.recv() ?: break; emit(CountResponse.parseFrom(p)) }
   }
 
   suspend fun fail(req: FailRequest): FailResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Fail", body = req.toByteArray()))
+    val res = t.send(Request(url = "/v1/fail", body = req.toByteArray()))
     res.error?.let{ throw it }
     return FailResponse.parseFrom(res.body)
   }
