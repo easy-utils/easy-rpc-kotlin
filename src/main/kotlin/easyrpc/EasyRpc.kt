@@ -162,7 +162,7 @@ class OkHttpTransport(
 
     private fun buildRequest(req: Request, cType: String): OkRequest {
         val b = OkRequest.Builder()
-            .url(req.url)
+            .url(if (req.url.startsWith("http")) req.url else base + req.url)
             .method(req.method, if (req.body != null) req.body!!.toRequestBody(null) else null)
             .header("content-type", cType)
         return b.build()
