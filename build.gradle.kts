@@ -12,6 +12,8 @@ dependencies {
     api("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.protobuf:protobuf-javalite:4.34.0")
     implementation("com.google.protobuf:protobuf-kotlin-lite:4.34.0")
+    implementation("io.ktor:ktor-client-cio-jvm:3.3.0")
+    implementation("io.ktor:ktor-client-core-jvm:3.3.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
 
