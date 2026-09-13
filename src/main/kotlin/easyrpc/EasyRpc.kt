@@ -58,6 +58,18 @@ fun httpStatus(code: Int): Int = when (code) {
     else -> 500
 }
 
+/** Reconstruct the exact RPCError from the server's connect-code/connect-error
+ *  headers (the HTTP status alone is lossy). */
+fun rpcErrorFrom(status: Int, headers: Map<String, List<String>>, body: ByteArray): RPCError {
+    val code = headers.entries.firstOrNull { it.key.equals("connect-code", ignoreCase = true) }?.value?.firstOrNull()
+    val c = code?.toIntOrNull()
+    if (c != null) {
+        val msg = headers.entries.firstOrNull { it.key.equals("connect-error", ignoreCase = true) }?.value?.firstOrNull() ?: ""
+        return RPCError(c, msg)
+    }
+    return RPCError(connectFromStatus(status), String(body))
+}
+
 fun connectFromStatus(status: Int): Int = when (status) {
     400 -> 3
     404 -> 5
@@ -127,7 +139,7 @@ class OkHttpTransport(
             status = status,
             headers = headers,
             body = body,
-            error = if (status >= 300) RPCError(connectFromStatus(status), String(body)) else null,
+            error = if (status >= 300) rpcErrorFrom(status, headers, body) else null,
         )
     }
 
@@ -164,7 +176,11 @@ class OkHttpTransport(
         val b = OkRequest.Builder()
             .url(if (req.url.startsWith("http")) req.url else base + req.url)
             .method(req.method, if (req.body != null) req.body!!.toRequestBody(null) else null)
-            .header("content-type", cType)
+        // Caller-supplied metadata (auth/tenant/token) first, then content-type.
+        for ((k, vs) in req.headers) {
+            for (v in vs) b.addHeader(k, v)
+        }
+        b.header("content-type", cType)
         return b.build()
     }
 
