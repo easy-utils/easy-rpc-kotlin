@@ -1,5 +1,10 @@
 package easyrpc
 
+import easyrpc.Frame
+import easyrpc.FrameReader
+import easyrpc.RPCError
+import easyrpc.decodeEndStream
+
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.*
@@ -53,38 +58,26 @@ class CioTransport(
             req.body?.let { setBody(it) }
         }
         val bodyBytes = resp.readRawBytes()
-        val reader = FrameReader2()
+        // Shared FrameReader semantics: the END frame terminates the stream
+        // (never yielded as a payload), end-stream errors surface via
+        // lastError(), and finish() catches truncated bodies.
+        val reader = FrameReader()
+        var frames = reader.push(bodyBytes)
+        var err: RPCError? = null
+        val endedIdx = frames.indexOfFirst { it.end }
+        if (endedIdx >= 0) {
+            val endFrame = frames[endedIdx]
+            val (code, message, details) = decodeEndStream(endFrame.payload)
+            if (code != 0) err = RPCError(code, message, details)
+            frames = frames.subList(0, endedIdx)
+        } else {
+            try { reader.finish() } catch (e: RPCError) { err = e }
+        }
         return object : Stream {
-            private var started = false
-            private val frames = reader.push(bodyBytes)
-            private var idx = 0
-            override suspend fun recv(): ByteArray? {
-                if (idx < frames.size) return frames[idx++]
-                return null
-            }
+            private val pushed = ArrayDeque(frames.map { it.payload })
+            override suspend fun recv(): ByteArray? = pushed.removeFirstOrNull()
+            override fun lastError(): RPCError? = err
             override fun cancel() {}
         }
-    }
-}
-
-/** Minimal frame parser reusing the same wire framing as FrameReader but
- * returning single payloads per call (drains until one complete frame). */
-private class FrameReader2 {
-    private var acc = ByteArray(0)
-    fun push(buf: ByteArray): List<ByteArray> {
-        acc += buf
-        val out = mutableListOf<ByteArray>()
-        while (true) {
-            if (acc.size < 5) break
-            val flags = acc[0].toInt() and 0xff
-            val len = ((acc[1].toInt() and 0xff) shl 24) or ((acc[2].toInt() and 0xff) shl 16) or
-                ((acc[3].toInt() and 0xff) shl 8) or (acc[4].toInt() and 0xff)
-            if (acc.size < 5 + len) break
-            val payload = acc.copyOfRange(5, 5 + len)
-            acc = acc.copyOfRange(5 + len, acc.size)
-            out.add(payload)
-            if ((flags and FLAG_END_STREAM) != 0) break
-        }
-        return out
     }
 }

@@ -559,11 +559,15 @@ class OkHttpTransport(
         val b = OkRequest.Builder()
             .url(if (req.url.startsWith("http")) req.url else base + req.url)
             .method(req.method, if (req.body != null) req.body!!.toRequestBody(null) else null)
-        // Caller-supplied metadata (auth/tenant/token) first, then content-type.
+        // Caller-supplied metadata (auth/tenant/token) first.
         for ((k, vs) in req.headers) {
             for (v in vs) b.addHeader(k, v)
         }
-        b.header("content-type", cType)
+        // Default content-type ONLY when the caller did not set one — the
+        // generated clients negotiate proto/json themselves and a hardcoded
+        // proto value silently breaks the JSON codec.
+        val hasCt = req.headers.keys.any { it.equals("content-type", ignoreCase = true) }
+        if (!hasCt) b.header("content-type", cType)
         return b.build()
     }
 
