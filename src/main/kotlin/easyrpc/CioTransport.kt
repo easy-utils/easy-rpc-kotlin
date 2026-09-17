@@ -30,20 +30,26 @@ class CioTransport(
         val resp = client.request(url(req.url)) {
             method = HttpMethod.parse(req.method)
             req.headers.forEach { (k, vs) -> vs.forEach { v -> headers.append(k, v) } }
-            header(HttpHeaders.ContentType, "application/proto")
+            // Default content-type ONLY when the caller did not set one — a
+            // hardcoded proto value silently breaks the JSON codec.
+            val hasCt = req.headers.keys.any { it.equals("content-type", ignoreCase = true) }
+            if (!hasCt) header(HttpHeaders.ContentType, "application/proto")
             req.body?.let { setBody(it) }
         }
         val body = resp.readRawBytes()
         val status = resp.status.value
-        return Response(status, emptyMap(), body,
-            if (status >= 300) RPCError(connectFromStatus(status), body.toString(Charsets.UTF_8)) else null)
+        // Real header map + shared error fallback chain (code/details survive).
+        val hdrs: Map<String, List<String>> = resp.headers.entries().associate { (k, _) -> k.lowercase() to (resp.headers.getAll(k) ?: emptyList()) }
+        return Response(status, hdrs, body,
+            if (status >= 300) rpcErrorFrom(status, hdrs, body) else null)
     }
 
     override suspend fun openStream(req: Request): Stream {
         val resp = client.request(url(req.url)) {
             method = HttpMethod.parse(req.method)
             req.headers.forEach { (k, vs) -> vs.forEach { v -> headers.append(k, v) } }
-            header(HttpHeaders.ContentType, "application/connect+proto")
+            val hasCt2 = req.headers.keys.any { it.equals("content-type", ignoreCase = true) }
+            if (!hasCt2) header(HttpHeaders.ContentType, "application/connect+proto")
             req.body?.let { setBody(it) }
         }
         val bodyBytes = resp.readRawBytes()
