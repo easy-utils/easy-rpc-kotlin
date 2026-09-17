@@ -26,7 +26,7 @@ publishing {
             from(components["java"])
             groupId = "io.github.easy-utils"
             artifactId = "easy-rpc-kotlin"
-            version = "0.2.0"
+            version = "0.3.0"
         }
     }
     repositories {
