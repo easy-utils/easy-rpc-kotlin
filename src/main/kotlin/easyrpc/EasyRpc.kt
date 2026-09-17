@@ -110,6 +110,8 @@ fun rpcErrorFrom(status: Int, headers: Map<String, List<String>>, body: ByteArra
         val msg = headers.entries.firstOrNull { it.key.equals("connect-error", ignoreCase = true) }?.value?.firstOrNull() ?: ""
         return RPCError(c, msg)
     }
+    val (jc, jm) = decodeErrorJson(body)
+    if (jc != 0) return RPCError(jc, jm)
     return RPCError(connectFromStatus(status), String(body))
 }
 
@@ -125,6 +127,23 @@ fun parseTimeout(value: String?): Int {
 fun withTimeout(req: Request, timeoutMs: Int): Request {
     if (timeoutMs <= 0) return req
     return req.copy(headers = req.headers + (HEADER_TIMEOUT to listOf(timeoutMs.toString())))
+}
+
+/** Connect unary error body `{code,message}`. */
+fun encodeErrorJson(code: Int, message: String): ByteArray =
+    "{\"code\":\"${codeToString(code)}\",\"message\":\"${message.replace("\\","\\\\").replace("\"","\\\"")}\"}"
+        .toByteArray(Charsets.UTF_8)
+
+/** Parse a Connect unary error body; (0, "") when not an error body. */
+fun decodeErrorJson(body: ByteArray): Pair<Int, String> {
+    if (body.isEmpty()) return 0 to ""
+    val text = body.toString(Charsets.UTF_8)
+    val key = "\"code\""
+    val i = text.indexOf(key); if (i < 0) return 0 to ""
+    val c = text.indexOf(':', i + key.length); if (c < 0) return 0 to ""
+    val q = text.indexOf('"', c + 1); if (q < 0) return 0 to ""
+    val e = text.indexOf('"', q + 1); if (e < 0) return 0 to ""
+    return codeFromString(text.substring(q + 1, e)) to ""
 }
 
 fun connectFromStatus(status: Int): Int = when (status) {
