@@ -176,6 +176,44 @@ class FrameReader {
     }
 }
 
+/** A call interceptor: mutate the request (auth/metadata), impose a deadline,
+ *  observe, or short-circuit. `next_` performs the call. */
+interface Interceptor {
+    suspend fun unary(req: Request, next_: suspend (Request) -> Response): Response = next_(req)
+    suspend fun stream(req: Request, next_: suspend (Request) -> Stream): Stream = next_(req)
+}
+
+/** Apply interceptors (first = outermost) around a Transport. */
+class InterceptorTransport(private val ics: List<Interceptor>, private val inner: Transport) : Transport {
+    override suspend fun send(req: Request): Response {
+        suspend fun dispatch(i: Int, r: Request): Response =
+            if (i >= ics.size) inner.send(r) else ics[i].unary(r) { nr -> dispatch(i + 1, nr) }
+        return dispatch(0, req)
+    }
+    override suspend fun openStream(req: Request): Stream {
+        suspend fun dispatch(i: Int, r: Request): Stream =
+            if (i >= ics.size) inner.openStream(r) else ics[i].stream(r) { nr -> dispatch(i + 1, nr) }
+        return dispatch(0, req)
+    }
+}
+
+/** Attach fixed metadata to every call. */
+class MetadataInterceptor(private val md: Map<String, List<String>>) : Interceptor {
+    private fun aug(req: Request): Request {
+        val h = req.headers.toMutableMap()
+        for ((k, v) in md) h.putIfAbsent(k, v)
+        return req.copy(headers = h)
+    }
+    override suspend fun unary(req: Request, next_: suspend (Request) -> Response) = next_(aug(req))
+    override suspend fun stream(req: Request, next_: suspend (Request) -> Stream) = next_(aug(req))
+}
+
+/** Attach a Connect deadline to every call. */
+class TimeoutInterceptor(private val ms: Int) : Interceptor {
+    override suspend fun unary(req: Request, next_: suspend (Request) -> Response) = next_(withTimeout(req, ms))
+    override suspend fun stream(req: Request, next_: suspend (Request) -> Stream) = next_(withTimeout(req, ms))
+}
+
 /** okhttp (HTTP/1.1) bridge; matches Go net/http server. */
 class OkHttpTransport(
     private val client: OkHttpClient = OkHttpClient(),
