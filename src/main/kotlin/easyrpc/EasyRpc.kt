@@ -26,6 +26,8 @@ data class Request(
     val method: String = "POST",
     val headers: Headers = emptyMap(),
     val body: ByteArray? = null,
+    /** Local cancellation channel. Adapters that support abort honour it. */
+    val job: kotlinx.coroutines.Job? = null,
 )
 
 /** Normalized response. */
@@ -246,11 +248,22 @@ class MetadataInterceptor(private val md: Map<String, List<String>>) : Intercept
     override suspend fun stream(req: Request, next_: suspend (Request) -> Stream) = next_(aug(req))
 }
 
-/** Attach a Connect deadline to every call. */
+/** Attach a Connect deadline to every call; enforces locally via withTimeout
+ *  so it works over any adapter (okhttp via job cancellation). */
 class TimeoutInterceptor(private val ms: Int) : Interceptor {
-    override suspend fun unary(req: Request, next_: suspend (Request) -> Response) = next_(withTimeout(req, ms))
-    override suspend fun stream(req: Request, next_: suspend (Request) -> Stream) = next_(withTimeout(req, ms))
+    private suspend fun <T> run(req: Request, next_: suspend (Request) -> T): T {
+        if (ms <= 0) return next_(req)
+        return withTimeoutOrNullMs(ms) {
+            val job = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+            next_(withTimeout(req.copy(job = job), ms))
+        }
+    }
+    override suspend fun unary(req: Request, next_: suspend (Request) -> Response) = run(req, next_)
+    override suspend fun stream(req: Request, next_: suspend (Request) -> Stream) = run(req, next_)
 }
+
+private suspend fun <T> withTimeoutOrNullMs(ms: Int, block: suspend () -> T): T =
+    kotlinx.coroutines.withTimeout(ms.toLong()) { block() }
 
 /** okhttp (HTTP/1.1) bridge; matches Go net/http server. */
 class OkHttpTransport(
