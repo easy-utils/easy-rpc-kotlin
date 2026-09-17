@@ -267,6 +267,31 @@ class TimeoutInterceptor(private val ms: Int) : Interceptor {
 }
 
 
+/** Adapter modes for the Kotlin composition root. */
+enum class TransportMode { AUTO, OKHTTP }
+
+/**
+ * Composition root: build a Transport by [mode], install the built-in
+ * metadata/deadline interceptors, then any [extra]. Swapping [mode] leaves the
+ * interceptors unchanged.
+ */
+fun connect(
+    baseUrl: String,
+    token: String = "",
+    mode: TransportMode = TransportMode.AUTO,
+    timeoutMs: Int = 0,
+    extra: List<Interceptor> = emptyList(),
+    client: OkHttpClient = OkHttpClient(),
+): Transport {
+    val inner: Transport = OkHttpTransport(client = client, base = baseUrl)
+    val ics = buildList {
+        if (token.isNotEmpty()) add(MetadataInterceptor(mapOf("Authorization" to listOf("Bearer $token"))))
+        if (timeoutMs > 0) add(TimeoutInterceptor(timeoutMs))
+        addAll(extra)
+    }
+    return if (ics.isEmpty()) inner else InterceptorTransport(ics, inner)
+}
+
 /** okhttp (HTTP/1.1) bridge; matches Go net/http server. */
 class OkHttpTransport(
     private val client: OkHttpClient = OkHttpClient(),
