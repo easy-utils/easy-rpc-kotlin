@@ -303,10 +303,14 @@ fun gzipCompress(data: ByteArray): ByteArray = try {
     bos.toByteArray()
 } catch (e: Exception) { data }
 
-/** gzip-decompress (identity on failure). */
+/** gzip-decompress. THROWS RPCError(13) on corrupt input (fault matrix M10):
+ * a flagged-but-corrupt gzip payload is a protocol error, never raw
+ * compressed bytes. */
 fun gzipDecompress(data: ByteArray): ByteArray = try {
     java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(data)).use { it.readBytes() }
-} catch (e: Exception) { data }
+} catch (e: Exception) {
+    throw RPCError(13, "corrupt gzip frame: " + (e.message ?: e.toString()))
+}
 
 const val HEADER_TIMEOUT = "connect-timeout-ms"
 const val HEADER_PROTOCOL_VERSION = "connect-protocol-version"
@@ -377,6 +381,8 @@ data class Frame(val payload: ByteArray, val end: Boolean)
 /** De-frames a byte stream into typed frames. */
 class FrameReader {
     private var acc = ByteArray(0)
+    private var sawEnd = false
+
     fun push(buf: ByteArray): List<Frame> {
         acc += buf
         val out = mutableListOf<Frame>()
@@ -391,9 +397,20 @@ class FrameReader {
             var payload = acc.copyOfRange(5, 5 + len)
             acc = acc.copyOfRange(5 + len, acc.size)
             if ((flags and 0x01) != 0) payload = gzipDecompress(payload)
-            out.add(Frame(payload, (flags and FLAG_END_STREAM) != 0))
+            val end = (flags and FLAG_END_STREAM) != 0
+            if (end) sawEnd = true
+            out.add(Frame(payload, end))
         }
         return out
+    }
+
+    /** Must be called when the source ends. Fault matrix F2/M8: the Connect
+     * protocol requires every server-stream to terminate with an END frame; a
+     * body that ends without one (or with trailing partial bytes) was
+     * truncated mid-stream. */
+    fun finish() {
+        if (acc.isNotEmpty()) throw RPCError(13, "truncated frame at end of stream")
+        if (!sawEnd) throw RPCError(13, "stream ended without END frame")
     }
 }
 
@@ -505,9 +522,21 @@ class OkHttpTransport(
             private var ended = false
             private var err: RPCError? = null
             override suspend fun recv(): ByteArray? {
-                if (ended) return null
+                // Drain buffered frames first, even after the END frame has
+                // been seen (frames emitted before the error must not drop).
                 if (pushed.isNotEmpty()) return pushed.removeFirst()
-                val chunk = readChunk(it) ?: run { ended = true; return null }
+                if (ended) return null
+                val chunk = readChunk(it) ?: run {
+                    ended = true
+                    // Fault matrix F2/M8: missing END frame or trailing
+                    // partial bytes = truncated mid-stream.
+                    try {
+                        reader.finish()
+                    } catch (e: RPCError) {
+                        err = e
+                    }
+                    return null
+                }
                 for (f in reader.push(chunk)) {
                     if (f.end) {
                         val (code, message, details) = decodeEndStream(f.payload)
