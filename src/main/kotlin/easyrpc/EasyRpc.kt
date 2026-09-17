@@ -116,6 +116,9 @@ fun rpcErrorFrom(status: Int, headers: Map<String, List<String>>, body: ByteArra
 }
 
 const val HEADER_TIMEOUT = "connect-timeout-ms"
+const val HEADER_PROTOCOL_VERSION = "connect-protocol-version"
+const val CONNECT_PROTOCOL_VERSION = "1"
+const val DEFAULT_MAX_MESSAGE_BYTES = 4 * 1024 * 1024
 
 /** Parse the Connect timeout header into milliseconds (0 = none). */
 fun parseTimeout(value: String?): Int {
