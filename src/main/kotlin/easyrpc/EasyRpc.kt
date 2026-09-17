@@ -39,6 +39,8 @@ data class Response(
 /** Server-stream of raw message payloads. */
 interface Stream {
     suspend fun recv(): ByteArray?   // null => end
+    /** Set when the stream ended with a Connect end-stream error. */
+    fun lastError(): RPCError? = null
     fun cancel()
 }
 
@@ -56,6 +58,47 @@ fun httpStatus(code: Int): Int = when (code) {
     16 -> 401
     14 -> 503
     else -> 500
+}
+
+/** Connect code -> stable lowercase wire name. */
+val CODE_NAMES = mapOf(
+    0 to "ok", 1 to "canceled", 2 to "unknown", 3 to "invalid_argument",
+    4 to "deadline_exceeded", 5 to "not_found", 6 to "already_exists",
+    7 to "permission_denied", 8 to "resource_exhausted", 9 to "failed_precondition",
+    10 to "aborted", 11 to "out_of_range", 12 to "unimplemented", 13 to "internal",
+    14 to "unavailable", 15 to "data_loss", 16 to "unauthenticated",
+)
+fun codeToString(code: Int): String = CODE_NAMES[code] ?: "unknown"
+fun codeFromString(name: String): Int = CODE_NAMES.entries.firstOrNull { it.value == name }?.key ?: 2
+
+/** Encode a Connect end-stream payload; a clean end is empty. */
+fun encodeEndStream(code: Int, message: String): ByteArray {
+    if (code == 0) return ByteArray(0)
+    val escaped = message.replace("\\", "\\\\").replace("\"", "\\\"")
+    return "{\"error\":{\"code\":\"${codeToString(code)}\",\"message\":\"$escaped\"}}"
+        .toByteArray(Charsets.UTF_8)
+}
+
+/** Decode a Connect end-stream payload into (code, message); (0, "") clean. */
+fun decodeEndStream(payload: ByteArray): Pair<Int, String> {
+    if (payload.isEmpty()) return 0 to ""
+    val text = payload.toString(Charsets.UTF_8)
+    fun field(name: String): String? {
+        val key = "\"$name\""
+        val i = text.indexOf(key); if (i < 0) return null
+        val c = text.indexOf(':', i + key.length); if (c < 0) return null
+        val q = text.indexOf('"', c + 1); if (q < 0) return null
+        val sb = StringBuilder(); var j = q + 1
+        while (j < text.length) {
+            val ch = text[j]
+            if (ch == '\\') { if (j + 1 < text.length) { sb.append(text[j + 1]); j += 2; continue } }
+            if (ch == '"') break
+            sb.append(ch); j++
+        }
+        return sb.toString()
+    }
+    val name = field("code") ?: return 0 to ""
+    return codeFromString(name) to (field("message") ?: "")
 }
 
 /** Reconstruct the exact RPCError from the server's connect-code/connect-error
@@ -94,12 +137,15 @@ fun frame(payload: ByteArray, end: Boolean = false): ByteArray {
     return out
 }
 
-/** De-frames a byte stream; returns payloads. End-stream frame => null. */
+/** One decoded frame: payload + whether it is the END frame. */
+data class Frame(val payload: ByteArray, val end: Boolean)
+
+/** De-frames a byte stream into typed frames. */
 class FrameReader {
     private var acc = ByteArray(0)
-    fun push(buf: ByteArray): List<ByteArray> {
+    fun push(buf: ByteArray): List<Frame> {
         acc += buf
-        val out = mutableListOf<ByteArray>()
+        val out = mutableListOf<Frame>()
         while (true) {
             if (acc.size < 5) break
             val flags = acc[0].toInt() and 0xff
@@ -110,13 +156,7 @@ class FrameReader {
             if (acc.size < 5 + len) break
             val payload = acc.copyOfRange(5, 5 + len)
             acc = acc.copyOfRange(5 + len, acc.size)
-            out.add(payload)
-            if ((flags and FLAG_END_STREAM) != 0) {
-                // terminal marker
-                out.add(ByteArray(0).also { } ) // sentinel handled by caller
-                // instead: append null marker via empty + flag; simpler: return with a poison
-                break
-            }
+            out.add(Frame(payload, (flags and FLAG_END_STREAM) != 0))
         }
         return out
     }
@@ -150,22 +190,25 @@ class OkHttpTransport(
         val body = resp.body ?: error("no body")
         val it = body.byteStream()
         return object : Stream {
-            private var pushed = ArrayDeque<ByteArray>()
-            private var finished = false
+            private val pushed = ArrayDeque<ByteArray>()
             private var ended = false
-            private val readLock = Object()
+            private var err: RPCError? = null
             override suspend fun recv(): ByteArray? {
                 if (ended) return null
                 if (pushed.isNotEmpty()) return pushed.removeFirst()
                 val chunk = readChunk(it) ?: run { ended = true; return null }
-                val frames = reader.push(chunk)
-                for (f in frames) {
-                    // detect end frame encoded as one empty; but frame() end appends empty payload. We'll treat
-                    // a frame with zero length AFTER flags end as end. Simpler: raw end detection not via sentinel.
-                    pushed.addLast(f)
+                for (f in reader.push(chunk)) {
+                    if (f.end) {
+                        val (code, message) = decodeEndStream(f.payload)
+                        if (code != 0) err = RPCError(code, message)
+                        ended = true
+                        break
+                    }
+                    pushed.addLast(f.payload)
                 }
                 return if (pushed.isEmpty()) null else pushed.removeFirst()
             }
+            override fun lastError(): RPCError? = err
             override fun cancel() {
                 body.close()
             }

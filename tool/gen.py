@@ -121,6 +121,7 @@ def main():
                     L.append(f'  fun {camel(name)}(req: {it}): Flow<{ot}> = flow {{')
                     L.append(f'    val st = t.openStream(Request(url = "{path}", body = req.toByteArray()))')
                     L.append(f'    while (true) {{ val p = st.recv() ?: break; emit({ot}.parseFrom(p)) }}')
+                    L.append('    st.lastError()?.let { throw it }')
                     L.append('  }')
                 else:
                     L.append(f'  suspend fun {camel(name)}(req: {it}): {ot} {{')
