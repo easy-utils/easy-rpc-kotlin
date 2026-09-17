@@ -253,17 +253,19 @@ class MetadataInterceptor(private val md: Map<String, List<String>>) : Intercept
 class TimeoutInterceptor(private val ms: Int) : Interceptor {
     private suspend fun <T> run(req: Request, next_: suspend (Request) -> T): T {
         if (ms <= 0) return next_(req)
-        return withTimeoutOrNullMs(ms) {
-            val job = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
-            next_(withTimeout(req.copy(job = job), ms))
+        return try {
+            kotlinx.coroutines.withTimeout(ms.toLong()) {
+                val job = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+                next_(withTimeout(req.copy(job = job), ms))
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            throw RPCError(4, "deadline exceeded")
         }
     }
     override suspend fun unary(req: Request, next_: suspend (Request) -> Response) = run(req, next_)
     override suspend fun stream(req: Request, next_: suspend (Request) -> Stream) = run(req, next_)
 }
 
-private suspend fun <T> withTimeoutOrNullMs(ms: Int, block: suspend () -> T): T =
-    kotlinx.coroutines.withTimeout(ms.toLong()) { block() }
 
 /** okhttp (HTTP/1.1) bridge; matches Go net/http server. */
 class OkHttpTransport(
