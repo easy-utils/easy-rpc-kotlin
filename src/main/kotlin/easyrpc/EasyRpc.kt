@@ -115,8 +115,23 @@ fun rpcErrorFrom(status: Int, headers: Map<String, List<String>>, body: ByteArra
     return RPCError(connectFromStatus(status), String(body))
 }
 
+/** gzip-compress (identity on failure). */
+fun gzipCompress(data: ByteArray): ByteArray = try {
+    val bos = java.io.ByteArrayOutputStream()
+    java.util.zip.GZIPOutputStream(bos).use { it.write(data) }
+    bos.toByteArray()
+} catch (e: Exception) { data }
+
+/** gzip-decompress (identity on failure). */
+fun gzipDecompress(data: ByteArray): ByteArray = try {
+    java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(data)).use { it.readBytes() }
+} catch (e: Exception) { data }
+
 const val HEADER_TIMEOUT = "connect-timeout-ms"
 const val HEADER_PROTOCOL_VERSION = "connect-protocol-version"
+const val HEADER_ACCEPT_ENCODING = "connect-accept-encoding"
+const val ENCODING_GZIP = "gzip"
+const val COMPRESS_MIN_BYTES = 1024
 const val CONNECT_PROTOCOL_VERSION = "1"
 const val DEFAULT_MAX_MESSAGE_BYTES = 4 * 1024 * 1024
 
@@ -190,8 +205,9 @@ class FrameReader {
                 ((acc[3].toInt() and 0xff) shl 8) or
                 (acc[4].toInt() and 0xff)
             if (acc.size < 5 + len) break
-            val payload = acc.copyOfRange(5, 5 + len)
+            var payload = acc.copyOfRange(5, 5 + len)
             acc = acc.copyOfRange(5 + len, acc.size)
+            if ((flags and 0x01) != 0) payload = gzipDecompress(payload)
             out.add(Frame(payload, (flags and FLAG_END_STREAM) != 0))
         }
         return out
