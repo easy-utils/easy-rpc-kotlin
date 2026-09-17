@@ -113,6 +113,20 @@ fun rpcErrorFrom(status: Int, headers: Map<String, List<String>>, body: ByteArra
     return RPCError(connectFromStatus(status), String(body))
 }
 
+const val HEADER_TIMEOUT = "connect-timeout-ms"
+
+/** Parse the Connect timeout header into milliseconds (0 = none). */
+fun parseTimeout(value: String?): Int {
+    val n = value?.toIntOrNull() ?: return 0
+    return if (n > 0) n else 0
+}
+
+/** Attach a deadline to a request. */
+fun withTimeout(req: Request, timeoutMs: Int): Request {
+    if (timeoutMs <= 0) return req
+    return req.copy(headers = req.headers + (HEADER_TIMEOUT to listOf(timeoutMs.toString())))
+}
+
 fun connectFromStatus(status: Int): Int = when (status) {
     400 -> 3
     404 -> 5
