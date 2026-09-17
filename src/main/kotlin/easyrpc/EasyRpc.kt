@@ -17,8 +17,22 @@ import kotlin.coroutines.resumeWithException
 /** Multi-value headers. */
 typealias Headers = Map<String, List<String>>
 
+/** A structured error detail (spec §4.1, aligned with Connect Error Details /
+ * gRPC google.rpc status details). [type] is a type URL; [value] is opaque
+ * bytes (typically an encoded protobuf message). */
+data class ErrorDetail(val type: String, val value: ByteArray) {
+    override fun equals(other: Any?): Boolean =
+        other is ErrorDetail && other.type == type && other.value.contentEquals(value)
+    override fun hashCode(): Int = type.hashCode() * 31 + value.contentHashCode()
+}
+
 /** Wire error with a Connect code. */
-data class RPCError(val code: Int, override val message: String) : Exception("easyrpc: code=$code $message")
+data class RPCError(
+    val code: Int,
+    override val message: String,
+    /** Optional structured details (spec §4.1); opaque to the wire layer. */
+    val details: List<ErrorDetail>? = null,
+) : Exception("easyrpc: code=$code $message")
 
 /** Normalized request. */
 data class Request(
@@ -53,12 +67,19 @@ interface Transport {
 }
 
 fun httpStatus(code: Int): Int = when (code) {
+    1 -> 499
     3 -> 400
+    4 -> 504
     5 -> 404
+    6 -> 409
     7 -> 403
     8 -> 429
-    16 -> 401
+    9 -> 400
+    10 -> 409
+    11 -> 400
+    12 -> 501
     14 -> 503
+    16 -> 401
     else -> 500
 }
 
@@ -73,34 +94,189 @@ val CODE_NAMES = mapOf(
 fun codeToString(code: Int): String = CODE_NAMES[code] ?: "unknown"
 fun codeFromString(name: String): Int = CODE_NAMES.entries.firstOrNull { it.value == name }?.key ?: 2
 
-/** Encode a Connect end-stream payload; a clean end is empty. */
-fun encodeEndStream(code: Int, message: String): ByteArray {
-    if (code == 0) return ByteArray(0)
-    val escaped = message.replace("\\", "\\\\").replace("\"", "\\\"")
-    return "{\"error\":{\"code\":\"${codeToString(code)}\",\"message\":\"$escaped\"}}"
-        .toByteArray(Charsets.UTF_8)
-}
+// ---- minimal JSON (dependency-free; details need real array/object parsing) ----
 
-/** Decode a Connect end-stream payload into (code, message); (0, "") clean. */
-fun decodeEndStream(payload: ByteArray): Pair<Int, String> {
-    if (payload.isEmpty()) return 0 to ""
-    val text = payload.toString(Charsets.UTF_8)
-    fun field(name: String): String? {
-        val key = "\"$name\""
-        val i = text.indexOf(key); if (i < 0) return null
-        val c = text.indexOf(':', i + key.length); if (c < 0) return null
-        val q = text.indexOf('"', c + 1); if (q < 0) return null
-        val sb = StringBuilder(); var j = q + 1
-        while (j < text.length) {
-            val ch = text[j]
-            if (ch == '\\') { if (j + 1 < text.length) { sb.append(text[j + 1]); j += 2; continue } }
-            if (ch == '"') break
-            sb.append(ch); j++
+/** Parse a JSON document to Map<String,Any?>/List<Any?>/String/Long/Double/Boolean/null. */
+internal fun parseJson(text: String): Any? = JsonParser(text).run { parseValue().also { skipWs() } }
+
+private class JsonParser(private val s: String) {
+    private var i = 0
+    fun skipWs() { while (i < s.length && s[i].let { it == ' ' || it == '\n' || it == '\r' || it == '\t' }) i++ }
+    fun parseValue(): Any? {
+        skipWs()
+        if (i >= s.length) return null
+        return when (s[i]) {
+            '{' -> parseObject()
+            '[' -> parseArray()
+            '"' -> parseString()
+            't' -> { i += 4; true }
+            'f' -> { i += 5; false }
+            'n' -> { i += 4; null }
+            else -> parseNumber()
+        }
+    }
+    private fun parseObject(): MutableMap<String, Any?> {
+        val out = LinkedHashMap<String, Any?>()
+        i++ // {
+        skipWs()
+        if (i < s.length && s[i] == '}') { i++; return out }
+        while (i < s.length) {
+            skipWs()
+            val k = parseString() as? String ?: break
+            skipWs()
+            if (i < s.length && s[i] == ':') i++
+            out[k] = parseValue()
+            skipWs()
+            if (i < s.length && s[i] == ',') { i++; continue }
+            break
+        }
+        if (i < s.length && s[i] == '}') i++
+        return out
+    }
+    private fun parseArray(): MutableList<Any?> {
+        val out = ArrayList<Any?>()
+        i++ // [
+        skipWs()
+        if (i < s.length && s[i] == ']') { i++; return out }
+        while (i < s.length) {
+            out.add(parseValue())
+            skipWs()
+            if (i < s.length && s[i] == ',') { i++; continue }
+            break
+        }
+        if (i < s.length && s[i] == ']') i++
+        return out
+    }
+    private fun parseString(): String? {
+        if (i >= s.length || s[i] != '"') return null
+        i++
+        val sb = StringBuilder()
+        while (i < s.length) {
+            when (val c = s[i]) {
+                '"' -> { i++; return sb.toString() }
+                '\\' -> {
+                    i++
+                    when (val e = if (i < s.length) s[i] else ' ') {
+                        'u' -> {
+                            if (i + 4 < s.length) {
+                                sb.append(s.substring(i + 1, i + 5).toInt(16).toChar()); i += 4
+                            }
+                        }
+                        'n' -> sb.append('\n'); 't' -> sb.append('\t'); 'r' -> sb.append('\r')
+                        'b' -> sb.append('\b'); 'f' -> sb.append('')
+                        else -> sb.append(e)
+                    }
+                    i++
+                }
+                else -> { sb.append(c); i++ }
+            }
         }
         return sb.toString()
     }
-    val name = field("code") ?: return 0 to ""
-    return codeFromString(name) to (field("message") ?: "")
+    private fun parseNumber(): Any {
+        val start = i
+        if (i < s.length && (s[i] == '-' || s[i] == '+')) i++
+        var isDouble = false
+        while (i < s.length && (s[i].isDigit() || s[i] == '.' || s[i] == 'e' || s[i] == 'E' || s[i] == '-' || s[i] == '+')) {
+            if (s[i] == '.' || s[i] == 'e' || s[i] == 'E') isDouble = true
+            i++
+        }
+        val t = s.substring(start, i)
+        return if (isDouble) t.toDouble() else (t.toLongOrNull() ?: 0L)
+    }
+}
+
+/** JSON-escape a string (covers the chars that appear in codes/messages). */
+internal fun jsonEscape(v: String): String = buildString {
+    for (c in v) when (c) {
+        '\\' -> append("\\\\")
+        '"' -> append("\\\"")
+        '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t")
+        else -> if (c < ' ') append("\\u%04x".format(c.code)) else append(c)
+    }
+}
+
+// ---- dependency-free base64 (works on every JDK / Android API level) ----
+
+private const val B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+internal fun b64Encode(data: ByteArray): String {
+    val out = StringBuilder((data.size + 2) / 3 * 4)
+    var i = 0
+    while (i < data.size) {
+        val n = (data[i].toInt() and 0xff shl 16) or
+            (if (i + 1 < data.size) data[i + 1].toInt() and 0xff shl 8 else 0) or
+            (if (i + 2 < data.size) data[i + 2].toInt() and 0xff else 0)
+        out.append(B64[n ushr 18 and 63])
+        out.append(B64[n ushr 12 and 63])
+        out.append(if (i + 1 < data.size) B64[n ushr 6 and 63] else '=')
+        out.append(if (i + 2 < data.size) B64[n and 63] else '=')
+        i += 3
+    }
+    return out.toString()
+}
+
+internal fun b64Decode(v: String): ByteArray? {
+    if (v.length % 4 != 0) return null
+    val out = ArrayList<Byte>(v.length * 3 / 4)
+    var buf = 0
+    var bits = 0
+    for (c in v) {
+        val d = when (c) {
+            in 'A'..'Z' -> c - 'A'
+            in 'a'..'z' -> c - 'a' + 26
+            in '0'..'9' -> c - '0' + 52
+            '+' -> 62; '/' -> 63
+            '=' -> break
+            else -> return null // strict: invalid char rejects the whole value (M7)
+        }
+        buf = buf shl 6 or d
+        bits += 6
+        if (bits >= 8) { bits -= 8; out.add((buf ushr bits).toByte()) }
+    }
+    return out.toByteArray()
+}
+
+private fun wireDetails(details: List<ErrorDetail>?): String =
+    (details ?: emptyList()).joinToString(",", "[", "]") {
+        "{\"type\":\"${jsonEscape(it.type)}\",\"value\":\"${b64Encode(it.value)}\"}"
+    }
+
+private fun parseWireDetails(v: Any?): List<ErrorDetail>? {
+    if (v !is List<*>) return null
+    val out = ArrayList<ErrorDetail>()
+    for (el in v) {
+        if (el !is Map<*, *>) continue
+        val t = el["type"] as? String
+        val value = el["value"] as? String
+        if (t.isNullOrEmpty() || value.isNullOrEmpty()) continue
+        b64Decode(value)?.let { out.add(ErrorDetail(t, it)) }
+    }
+    return if (out.isEmpty()) null else out
+}
+
+/** Encode a Connect end-stream payload; a clean end is empty. Details
+ * (spec §4.1) are included when non-empty. */
+fun encodeEndStream(code: Int, message: String, details: List<ErrorDetail>? = null): ByteArray {
+    if (code == 0) return ByteArray(0)
+    var err = "{\"code\":\"${codeToString(code)}\",\"message\":\"${jsonEscape(message)}\""
+    if (!details.isNullOrEmpty()) err += ",\"details\":${wireDetails(details)}"
+    return "{\"error\":$err}}".toByteArray(Charsets.UTF_8)
+}
+
+/** Decode a Connect end-stream payload into (code, message, details);
+ * (0, "", null) = clean end. Malformed input is a clean end (matrix M2); an
+ * error object without a code maps to 2 (M3/M4); unknown fields ignored (M5). */
+fun decodeEndStream(payload: ByteArray): Triple<Int, String, List<ErrorDetail>?> {
+    if (payload.isEmpty()) return Triple(0, "", null)
+    val root = parseJson(payload.toString(Charsets.UTF_8)) as? Map<*, *> ?: return Triple(0, "", null)
+    val err = root["error"] as? Map<*, *> ?: return Triple(0, "", null)
+    val name = err["code"] as? String
+    return Triple(
+        name?.let { codeFromString(it) } ?: 2,
+        (err["message"] as? String) ?: "",
+        parseWireDetails(err["details"]),
+    )
 }
 
 /** Reconstruct the exact RPCError from the server's connect-code/connect-error
@@ -109,11 +285,14 @@ fun rpcErrorFrom(status: Int, headers: Map<String, List<String>>, body: ByteArra
     val code = headers.entries.firstOrNull { it.key.equals("connect-code", ignoreCase = true) }?.value?.firstOrNull()
     val c = code?.toIntOrNull()
     if (c != null) {
+        // The header carries the exact code; the JSON body (when present) may
+        // still carry details - merge them (details never travel in headers).
         val msg = headers.entries.firstOrNull { it.key.equals("connect-error", ignoreCase = true) }?.value?.firstOrNull() ?: ""
-        return RPCError(c, msg)
+        val (_, _, hd) = decodeErrorJson(body)
+        return RPCError(c, msg, hd)
     }
-    val (jc, jm) = decodeErrorJson(body)
-    if (jc != 0) return RPCError(jc, jm)
+    val (jc, jm, jd) = decodeErrorJson(body)
+    if (jc != 0) return RPCError(jc, jm, jd)
     return RPCError(connectFromStatus(status), String(body))
 }
 
@@ -149,21 +328,19 @@ fun withTimeout(req: Request, timeoutMs: Int): Request {
     return req.copy(headers = req.headers + (HEADER_TIMEOUT to listOf(timeoutMs.toString())))
 }
 
-/** Connect unary error body `{code,message}`. */
-fun encodeErrorJson(code: Int, message: String): ByteArray =
-    "{\"code\":\"${codeToString(code)}\",\"message\":\"${message.replace("\\","\\\\").replace("\"","\\\"")}\"}"
-        .toByteArray(Charsets.UTF_8)
+/** Connect unary error body `{code,message[,details]}`. */
+fun encodeErrorJson(code: Int, message: String, details: List<ErrorDetail>? = null): ByteArray {
+    var body = "{\"code\":\"${codeToString(code)}\",\"message\":\"${jsonEscape(message)}\""
+    if (!details.isNullOrEmpty()) body += ",\"details\":${wireDetails(details)}"
+    return (body + "}").toByteArray(Charsets.UTF_8)
+}
 
-/** Parse a Connect unary error body; (0, "") when not an error body. */
-fun decodeErrorJson(body: ByteArray): Pair<Int, String> {
-    if (body.isEmpty()) return 0 to ""
-    val text = body.toString(Charsets.UTF_8)
-    val key = "\"code\""
-    val i = text.indexOf(key); if (i < 0) return 0 to ""
-    val c = text.indexOf(':', i + key.length); if (c < 0) return 0 to ""
-    val q = text.indexOf('"', c + 1); if (q < 0) return 0 to ""
-    val e = text.indexOf('"', q + 1); if (e < 0) return 0 to ""
-    return codeFromString(text.substring(q + 1, e)) to ""
+/** Parse a Connect unary error body; (0, "", null) when not an error body. */
+fun decodeErrorJson(body: ByteArray): Triple<Int, String, List<ErrorDetail>?> {
+    if (body.isEmpty()) return Triple(0, "", null)
+    val root = parseJson(body.toString(Charsets.UTF_8)) as? Map<*, *> ?: return Triple(0, "", null)
+    val name = root["code"] as? String ?: return Triple(0, "", null)
+    return Triple(codeFromString(name), (root["message"] as? String) ?: "", parseWireDetails(root["details"]))
 }
 
 fun connectFromStatus(status: Int): Int = when (status) {
@@ -173,6 +350,10 @@ fun connectFromStatus(status: Int): Int = when (status) {
     401 -> 16
     429 -> 8
     503 -> 14
+    409 -> 10
+    504 -> 4
+    501 -> 12
+    499 -> 1
     else -> 13
 }
 
@@ -329,8 +510,8 @@ class OkHttpTransport(
                 val chunk = readChunk(it) ?: run { ended = true; return null }
                 for (f in reader.push(chunk)) {
                     if (f.end) {
-                        val (code, message) = decodeEndStream(f.payload)
-                        if (code != 0) err = RPCError(code, message)
+                        val (code, message, details) = decodeEndStream(f.payload)
+                        if (code != 0) err = RPCError(code, message, details)
                         ended = true
                         break
                     }
