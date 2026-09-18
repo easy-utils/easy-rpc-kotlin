@@ -204,6 +204,7 @@ internal fun jsonEscape(v: String): String = buildString {
 private const val B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 internal fun b64Encode(data: ByteArray): String {
+    // UNPADDED standard base64 — matches Connect (base64.RawStdEncoding).
     val out = StringBuilder((data.size + 2) / 3 * 4)
     var i = 0
     while (i < data.size) {
@@ -212,25 +213,28 @@ internal fun b64Encode(data: ByteArray): String {
             (if (i + 2 < data.size) data[i + 2].toInt() and 0xff else 0)
         out.append(B64[n ushr 18 and 63])
         out.append(B64[n ushr 12 and 63])
-        out.append(if (i + 1 < data.size) B64[n ushr 6 and 63] else '=')
-        out.append(if (i + 2 < data.size) B64[n and 63] else '=')
+        if (i + 1 < data.size) out.append(B64[n ushr 6 and 63])
+        if (i + 2 < data.size) out.append(B64[n and 63])
         i += 3
     }
     return out.toString()
 }
 
 internal fun b64Decode(v: String): ByteArray? {
-    if (v.length % 4 != 0) return null
-    val out = ArrayList<Byte>(v.length * 3 / 4)
+    // Accept standard OR URL-safe base64, padded OR unpadded (Connect sends
+    // unpadded). Length % 4 == 1 is always invalid.
+    val s = v.trimEnd('=')
+    if (s.length % 4 == 1) return null
+    val out = ArrayList<Byte>(s.length * 3 / 4)
     var buf = 0
     var bits = 0
-    for (c in v) {
+    for (c in s) {
         val d = when (c) {
             in 'A'..'Z' -> c - 'A'
             in 'a'..'z' -> c - 'a' + 26
             in '0'..'9' -> c - '0' + 52
-            '+' -> 62; '/' -> 63
-            '=' -> break
+            '+' , '-' -> 62
+            '/', '_' -> 63
             else -> return null // strict: invalid char rejects the whole value (M7)
         }
         buf = buf shl 6 or d
