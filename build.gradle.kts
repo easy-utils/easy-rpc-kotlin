@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "easyrpc"
-version = "0.5.5"
+version = "0.6.0"
 
 repositories {
     mavenCentral()
@@ -59,7 +59,7 @@ publishing {
             from(components["java"])
             groupId = "io.github.easy-utils"
             artifactId = "easy-rpc-kotlin"
-            version = "0.5.5"
+            version = "0.6.0"
         }
     }
     repositories {

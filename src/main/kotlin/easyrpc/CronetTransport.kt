@@ -28,10 +28,6 @@ private val CALLBACK_EXECUTOR: Executor = Executors.newCachedThreadPool { r ->
 /**
  * Cronet transport (h1 + h2 + h3/QUIC at the Chromium network-stack level).
  *
- * The cronet API is a compile-only dependency: applications provide
- * `org.chromium.net:cronet-embedded` (JVM/desktop) or Play-Services Cronet
- * (Android) on their own classpath, keeping the core dependency-free.
- *
  * The engine is caller-provided: on Android build it with a Context
  * (`CronetEngine.Builder(context).enableHttp2(true).enableQuic(true)`); on
  * JVM bring your own embedded engine. Cronet neither reads the JVM
@@ -86,7 +82,7 @@ class CronetTransport(
                     }
                 }
             }
-            val request = newRequest(req, callback).apply { start() }
+            val request = newRequest(req, callback, stream = false).apply { start() }
             cont.invokeOnCancellation { try { request.cancel() } catch (_: Exception) {} }
         }
 
@@ -144,7 +140,7 @@ class CronetTransport(
                 holder.err = RPCError(1, "canceled")
                 channel.close()
             }
-        }).apply { start() }
+        }, stream = true).apply { start() }
 
         return object : Stream {
             private val reader = FrameReader()
@@ -200,14 +196,21 @@ class CronetTransport(
         }
     }
 
-    private fun newRequest(req: Request, callback: UrlRequest.Callback): UrlRequest {
+    private fun newRequest(
+        req: Request,
+        callback: UrlRequest.Callback,
+        stream: Boolean,
+    ): UrlRequest {
         val builder = engine.newUrlRequestBuilder(url(req.url), callback, CALLBACK_EXECUTOR)
             .setHttpMethod(req.method)
         // Caller-supplied headers first; default content-type ONLY when the
-        // caller did not set one (the JSON codec must survive — same rule as
+        // caller did not set one. The default differs per call shape — a
+        // server-stream needs `application/connect+proto`, unary
+        // `application/proto` (the JSON codec must survive — same rule as
         // every other adapter).
         val hasCt = req.headers.keys.any { it.equals("content-type", ignoreCase = true) }
-        if (!hasCt) builder.addHeader("content-type", "application/proto")
+        val cType = if (stream) "application/connect+proto" else "application/proto"
+        if (!hasCt) builder.addHeader("content-type", cType)
         for ((k, vs) in req.headers) {
             for (v in vs) builder.addHeader(k, v)
         }
@@ -229,5 +232,4 @@ class CronetTransport(
     private class HttpErrorHolder {
         var err: RPCError? = null
     }
-
 }
