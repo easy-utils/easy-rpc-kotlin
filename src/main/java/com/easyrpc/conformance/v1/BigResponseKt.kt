@@ -47,7 +47,6 @@ public object BigResponseKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.BigResponse.copy(block: `com.easyrpc.conformance.v1`.BigResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.BigResponse =
   `com.easyrpc.conformance.v1`.BigResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

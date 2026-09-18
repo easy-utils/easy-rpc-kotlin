@@ -89,7 +89,6 @@ public object StreamFailRequestKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.StreamFailRequest.copy(block: `com.easyrpc.conformance.v1`.StreamFailRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.StreamFailRequest =
   `com.easyrpc.conformance.v1`.StreamFailRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

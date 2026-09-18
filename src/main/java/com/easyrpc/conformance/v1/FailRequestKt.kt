@@ -47,7 +47,6 @@ public object FailRequestKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.FailRequest.copy(block: `com.easyrpc.conformance.v1`.FailRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.FailRequest =
   `com.easyrpc.conformance.v1`.FailRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

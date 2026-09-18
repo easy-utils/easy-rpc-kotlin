@@ -47,7 +47,6 @@ public object CountTrailerResponseKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.CountTrailerResponse.copy(block: `com.easyrpc.conformance.v1`.CountTrailerResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.CountTrailerResponse =
   `com.easyrpc.conformance.v1`.CountTrailerResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

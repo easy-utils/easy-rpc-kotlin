@@ -47,7 +47,6 @@ public object EchoTrailerRequestKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.EchoTrailerRequest.copy(block: `com.easyrpc.conformance.v1`.EchoTrailerRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.EchoTrailerRequest =
   `com.easyrpc.conformance.v1`.EchoTrailerRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

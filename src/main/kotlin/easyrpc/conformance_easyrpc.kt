@@ -81,4 +81,31 @@ class ConformanceServiceClient(private val t: Transport) {
     st.lastError()?.let { throw it }
   }
 
+  suspend fun echoBytes(req: EchoBytesRequest): EchoBytesResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoBytes", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return EchoBytesResponse.parseFrom(res.body)
+  }
+
+  suspend fun sleep(req: SleepRequest): SleepResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Sleep", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return SleepResponse.parseFrom(res.body)
+  }
+
+  suspend fun empty(req: EmptyRequest): EmptyResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Empty", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return EmptyResponse.parseFrom(res.body)
+  }
+
+  fun bigStream(req: BigStreamRequest): Flow<BigStreamResponse> = flow {
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/BigStream", body = frame(req.toByteArray())))
+    while (true) { val p = st.recv() ?: break; emit(BigStreamResponse.parseFrom(p)) }
+    st.lastError()?.let { throw it }
+  }
+
 }

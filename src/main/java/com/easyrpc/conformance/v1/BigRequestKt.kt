@@ -47,7 +47,6 @@ public object BigRequestKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.BigRequest.copy(block: `com.easyrpc.conformance.v1`.BigRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.BigRequest =
   `com.easyrpc.conformance.v1`.BigRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

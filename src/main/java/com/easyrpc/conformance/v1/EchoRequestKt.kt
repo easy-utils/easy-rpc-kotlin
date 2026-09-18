@@ -47,7 +47,6 @@ public object EchoRequestKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.EchoRequest.copy(block: `com.easyrpc.conformance.v1`.EchoRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.EchoRequest =
   `com.easyrpc.conformance.v1`.EchoRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

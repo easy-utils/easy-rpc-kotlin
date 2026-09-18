@@ -47,7 +47,6 @@ public object FailDetailsResponseKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.FailDetailsResponse.copy(block: `com.easyrpc.conformance.v1`.FailDetailsResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.FailDetailsResponse =
   `com.easyrpc.conformance.v1`.FailDetailsResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

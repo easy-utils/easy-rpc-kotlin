@@ -47,7 +47,6 @@ public object EchoResponseKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.EchoResponse.copy(block: `com.easyrpc.conformance.v1`.EchoResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.EchoResponse =
   `com.easyrpc.conformance.v1`.EchoResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

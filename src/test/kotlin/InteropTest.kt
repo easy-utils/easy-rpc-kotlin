@@ -58,4 +58,41 @@ class InteropTest {
         } catch (e: RPCError) { err = e }
         assertEquals(3, err?.code)
     }
+
+    @Test
+    fun echoBytesRoundTrip() = runBlocking {
+        val data = byteArrayOf(0, 1, 2, 0xff.toByte(), 0xfe.toByte(), 0x80.toByte())
+        val res = client().echoBytes(EchoBytesRequest.newBuilder()
+            .setData(com.google.protobuf.ByteString.copyFrom(data)).build())
+        assertTrue(data.contentEquals(res.data.toByteArray()))
+    }
+
+    @Test
+    fun emptyRoundTrip() = runBlocking {
+        val res = client().empty(EmptyRequest.getDefaultInstance())
+        assertEquals(0, res.serializedSize)
+    }
+
+    @Test
+    fun sleepDeadlineSurfaces() = runBlocking {
+        // Without a deadline the call returns ok; the raw-wire oracle owns the
+        // connect-timeout-ms deadline assertion.
+        val res = client().sleep(SleepRequest.newBuilder().setMillis(0).build())
+        assertTrue(res.ok)
+    }
+
+    @Test
+    fun bigStreamManyFrames() = runBlocking {
+        val idx = mutableListOf<Int>()
+        client().bigStream(BigStreamRequest.newBuilder().setCount(4).setSize(2048).build())
+            .collect { idx.add(it.index) }
+        assertEquals(listOf(0, 1, 2, 3), idx)
+    }
+
+    @Test
+    fun countTrailerSurfaces() = runBlocking {
+        val idx = mutableListOf<Int>()
+        client().countTrailer(CountTrailerRequest.newBuilder().setCount(2).build()).collect { idx.add(it.index) }
+        assertEquals(listOf(0, 1), idx)
+    }
 }

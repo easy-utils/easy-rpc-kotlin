@@ -47,7 +47,6 @@ public object CountRequestKt {
     }
   }
 }
-@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.CountRequest.copy(block: `com.easyrpc.conformance.v1`.CountRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.CountRequest =
   `com.easyrpc.conformance.v1`.CountRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 
