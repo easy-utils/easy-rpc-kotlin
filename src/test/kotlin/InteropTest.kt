@@ -8,7 +8,12 @@ import kotlin.test.assertTrue
 class InteropTest {
     private fun client(): ConformanceServiceClient {
         val base = System.getenv("EASY_RPC_BASE") ?: "http://127.0.0.1:18888"
-        return ConformanceServiceClient(OkHttpTransport(base = base))
+        // Unified transport vocabulary (spec §7.1): okhttp | cio (default okhttp).
+        val transport = when (System.getenv("EASY_RPC_TRANSPORT")) {
+            "cio" -> CioTransport(base = base)
+            else -> OkHttpTransport(base = base)
+        }
+        return ConformanceServiceClient(transport)
     }
 
     @Test
