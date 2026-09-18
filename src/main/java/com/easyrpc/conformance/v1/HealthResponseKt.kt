@@ -30,7 +30,7 @@ public object HealthResponseKt {
     internal fun _build(): com.easyrpc.conformance.v1.HealthResponse = _builder.build()
 
     /**
-     * `bool ok = 1 [json_name = "ok"];`
+     * `bool ok = 1;`
      */
     public var ok: kotlin.Boolean
       @kotlin.jvm.JvmName("getOk")
@@ -40,14 +40,14 @@ public object HealthResponseKt {
         _builder.ok = value
       }
     /**
-     * `bool ok = 1 [json_name = "ok"];`
+     * `bool ok = 1;`
      */
     public fun clearOk() {
       _builder.clearOk()
     }
 
     /**
-     * `string name = 2 [json_name = "name"];`
+     * `string name = 2;`
      */
     public var name: kotlin.String
       @kotlin.jvm.JvmName("getName")
@@ -57,13 +57,14 @@ public object HealthResponseKt {
         _builder.name = value
       }
     /**
-     * `string name = 2 [json_name = "name"];`
+     * `string name = 2;`
      */
     public fun clearName() {
       _builder.clearName()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.HealthResponse.copy(block: `com.easyrpc.conformance.v1`.HealthResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.HealthResponse =
   `com.easyrpc.conformance.v1`.HealthResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

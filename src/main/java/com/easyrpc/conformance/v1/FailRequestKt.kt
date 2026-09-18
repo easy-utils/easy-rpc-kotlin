@@ -30,7 +30,7 @@ public object FailRequestKt {
     internal fun _build(): com.easyrpc.conformance.v1.FailRequest = _builder.build()
 
     /**
-     * `string message = 1 [json_name = "message"];`
+     * `string message = 1;`
      */
     public var message: kotlin.String
       @kotlin.jvm.JvmName("getMessage")
@@ -40,13 +40,14 @@ public object FailRequestKt {
         _builder.message = value
       }
     /**
-     * `string message = 1 [json_name = "message"];`
+     * `string message = 1;`
      */
     public fun clearMessage() {
       _builder.clearMessage()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.FailRequest.copy(block: `com.easyrpc.conformance.v1`.FailRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.FailRequest =
   `com.easyrpc.conformance.v1`.FailRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

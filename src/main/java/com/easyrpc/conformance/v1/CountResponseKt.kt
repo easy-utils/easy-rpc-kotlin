@@ -30,7 +30,7 @@ public object CountResponseKt {
     internal fun _build(): com.easyrpc.conformance.v1.CountResponse = _builder.build()
 
     /**
-     * `int32 index = 1 [json_name = "index"];`
+     * `int32 index = 1;`
      */
     public var index: kotlin.Int
       @kotlin.jvm.JvmName("getIndex")
@@ -40,13 +40,14 @@ public object CountResponseKt {
         _builder.index = value
       }
     /**
-     * `int32 index = 1 [json_name = "index"];`
+     * `int32 index = 1;`
      */
     public fun clearIndex() {
       _builder.clearIndex()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.CountResponse.copy(block: `com.easyrpc.conformance.v1`.CountResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.CountResponse =
   `com.easyrpc.conformance.v1`.CountResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

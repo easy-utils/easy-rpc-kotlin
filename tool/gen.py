@@ -13,40 +13,11 @@ def resolve(f):
     pkg = f.package or ''
     for svc in f.service:
         for m in svc.method:
-            pp = rest_path(m) or f'/{pkg}.{svc.name}/{m.name}'
+            pp = f'/{pkg}.{svc.name}/{m.name}'
             out.append((svc.name, m.name or '', pp, m.server_streaming,
                         m.input_type.split('.')[-1], m.output_type.split('.')[-1]))
     return out
 
-
-def rest_path(m):
-    opts = m.options
-    if not opts:
-        return None
-    try:
-        raw = opts.SerializeToString()
-        pos = 0
-        while pos < len(raw):
-            tag, pos = readvar(raw, pos)
-            field = tag >> 3
-            wt = tag & 7
-            if wt == 2:
-                ln, pos = readvar(raw, pos)
-                val = raw[pos:pos + ln]
-                pos += ln
-                if field == 72295728:
-                    p = parse_rule(val)
-                    if p:
-                        return p
-            elif wt == 0:
-                _, pos = readvar(raw, pos)
-            elif wt == 5:
-                pos += 4
-            elif wt == 1:
-                pos += 8
-    except Exception:
-        return None
-    return None
 
 
 def readvar(b, i):
@@ -116,10 +87,11 @@ def main():
                  f'import {pkg_path}.*',
                  'import kotlinx.coroutines.flow.Flow', 'import kotlinx.coroutines.flow.flow', '']
             L.append(f'class {client}(private val t: Transport) {{')
+            L.append('  var lastTrailers: Map<String, List<String>> = emptyMap()')
             for (svc, name, path, ss, it, ot) in methods:
                 if ss:
                     L.append(f'  fun {camel(name)}(req: {it}): Flow<{ot}> = flow {{')
-                    L.append(f'    val st = t.openStream(Request(url = "{path}", body = req.toByteArray()))')
+                    L.append(f'    val st = t.openStream(Request(url = "{path}", body = frame(req.toByteArray())))')
                     L.append(f'    while (true) {{ val p = st.recv() ?: break; emit({ot}.parseFrom(p)) }}')
                     L.append('    st.lastError()?.let { throw it }')
                     L.append('  }')
@@ -127,6 +99,7 @@ def main():
                     L.append(f'  suspend fun {camel(name)}(req: {it}): {ot} {{')
                     L.append(f'    val res = t.send(Request(url = "{path}", body = req.toByteArray()))')
                     L.append('    res.error?.let{ throw it }')
+                    L.append('    lastTrailers = res.trailers')
                     L.append(f'    return {ot}.parseFrom(res.body)')
                     L.append('  }')
                 L.append('')

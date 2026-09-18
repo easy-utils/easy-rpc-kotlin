@@ -30,7 +30,7 @@ public object EchoRequestKt {
     internal fun _build(): com.easyrpc.conformance.v1.EchoRequest = _builder.build()
 
     /**
-     * `string input = 1 [json_name = "input"];`
+     * `string input = 1;`
      */
     public var input: kotlin.String
       @kotlin.jvm.JvmName("getInput")
@@ -40,13 +40,14 @@ public object EchoRequestKt {
         _builder.input = value
       }
     /**
-     * `string input = 1 [json_name = "input"];`
+     * `string input = 1;`
      */
     public fun clearInput() {
       _builder.clearInput()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.EchoRequest.copy(block: `com.easyrpc.conformance.v1`.EchoRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.EchoRequest =
   `com.easyrpc.conformance.v1`.EchoRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

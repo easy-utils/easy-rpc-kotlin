@@ -30,7 +30,7 @@ public object FailResponseKt {
     internal fun _build(): com.easyrpc.conformance.v1.FailResponse = _builder.build()
 
     /**
-     * `bool ok = 1 [json_name = "ok"];`
+     * `bool ok = 1;`
      */
     public var ok: kotlin.Boolean
       @kotlin.jvm.JvmName("getOk")
@@ -40,13 +40,14 @@ public object FailResponseKt {
         _builder.ok = value
       }
     /**
-     * `bool ok = 1 [json_name = "ok"];`
+     * `bool ok = 1;`
      */
     public fun clearOk() {
       _builder.clearOk()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.FailResponse.copy(block: `com.easyrpc.conformance.v1`.FailResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.FailResponse =
   `com.easyrpc.conformance.v1`.FailResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

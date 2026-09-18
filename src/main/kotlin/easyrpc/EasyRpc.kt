@@ -37,7 +37,6 @@ data class RPCError(
 /** Normalized request. */
 data class Request(
     val url: String,
-    val method: String = "POST",
     val headers: Headers = emptyMap(),
     val body: ByteArray? = null,
     /** Local cancellation channel. Adapters that support abort honour it. */
@@ -49,6 +48,8 @@ data class Response(
     val status: Int,
     val headers: Headers = emptyMap(),
     val body: ByteArray = ByteArray(0),
+    /** Unary trailing metadata (demuxed from `trailer-*` response headers). */
+    val trailers: Headers = emptyMap(),
     val error: RPCError? = null,
 )
 
@@ -57,6 +58,8 @@ interface Stream {
     suspend fun recv(): ByteArray?   // null => end
     /** Set when the stream ended with a Connect end-stream error. */
     fun lastError(): RPCError? = null
+    /** Trailing metadata from the END frame (available after the stream ends). */
+    fun trailers(): Headers = emptyMap()
     fun cancel()
 }
 
@@ -257,27 +260,88 @@ private fun parseWireDetails(v: Any?): List<ErrorDetail>? {
 
 /** Encode a Connect end-stream payload; a clean end is empty. Details
  * (spec §4.1) are included when non-empty. */
-fun encodeEndStream(code: Int, message: String, details: List<ErrorDetail>? = null): ByteArray {
-    if (code == 0) return ByteArray(0)
-    var err = "{\"code\":\"${codeToString(code)}\",\"message\":\"${jsonEscape(message)}\""
-    if (!details.isNullOrEmpty()) err += ",\"details\":${wireDetails(details)}"
-    return "{\"error\":$err}}".toByteArray(Charsets.UTF_8)
+fun encodeEndStream(
+    code: Int,
+    message: String,
+    details: List<ErrorDetail>? = null,
+    metadata: Headers = emptyMap(),
+): ByteArray {
+    val parts = mutableListOf<String>()
+    if (code != 0) {
+        var err = "\"error\":{\"code\":\"${codeToString(code)}\",\"message\":\"${jsonEscape(message)}\""
+        if (!details.isNullOrEmpty()) err += ",\"details\":${wireDetails(details)}"
+        parts.add(err + "}")
+    }
+    if (metadata.isNotEmpty()) {
+        val entries = metadata.entries.filter { it.value.isNotEmpty() }.map { (k, v) ->
+            val vals = v.joinToString(",") { "\"" + jsonEscape(it) + "\"" }
+            "\"" + jsonEscape(k) + "\":[" + vals + "]"
+        }
+        if (entries.isNotEmpty()) parts.add("\"metadata\":{" + entries.joinToString(",") + "}")
+    }
+    val json = "{" + parts.joinToString(",") + "}"
+    return json.toByteArray(Charsets.UTF_8)
 }
 
 /** Decode a Connect end-stream payload into (code, message, details);
  * (0, "", null) = clean end. Malformed input is a clean end (matrix M2); an
  * error object without a code maps to 2 (M3/M4); unknown fields ignored (M5). */
-fun decodeEndStream(payload: ByteArray): Triple<Int, String, List<ErrorDetail>?> {
-    if (payload.isEmpty()) return Triple(0, "", null)
-    val root = parseJson(payload.toString(Charsets.UTF_8)) as? Map<*, *> ?: return Triple(0, "", null)
-    val err = root["error"] as? Map<*, *> ?: return Triple(0, "", null)
+fun decodeEndStream(payload: ByteArray): EndStream {
+    if (payload.isEmpty()) return EndStream(0, "", null, emptyMap())
+    val root = parseJson(payload.toString(Charsets.UTF_8)) as? Map<*, *> ?: return EndStream(0, "", null, emptyMap())
+    var metadata: Headers = emptyMap()
+    (root["metadata"] as? Map<*, *>)?.let { md ->
+        val m = mutableMapOf<String, List<String>>()
+        for ((k, v) in md) {
+            if (k is String && v is List<*>) {
+                val vs = v.filterIsInstance<String>()
+                if (vs.isNotEmpty()) m[k] = vs
+            }
+        }
+        metadata = m
+    }
+    val err = root["error"] as? Map<*, *> ?: return EndStream(0, "", null, metadata)
     val name = err["code"] as? String
-    return Triple(
+    return EndStream(
         name?.let { codeFromString(it) } ?: 2,
         (err["message"] as? String) ?: "",
         parseWireDetails(err["details"]),
+        metadata,
     )
 }
+
+/** Decoded END frame: code/message/details + trailing metadata. */
+data class EndStream(val code: Int, val message: String, val details: List<ErrorDetail>?, val metadata: Headers)
+
+/** Split headers into (headers, trailers) by the `trailer-` prefix. */
+fun demuxTrailers(all: Headers): Pair<Headers, Headers> {
+    val h = mutableMapOf<String, List<String>>()
+    val t = mutableMapOf<String, List<String>>()
+    for ((k, v) in all) {
+        if (k.startsWith("trailer-", ignoreCase = true)) t[k.substring(8).lowercase()] = v
+        else h[k] = v
+    }
+    return h to t
+}
+
+/** Merge trailers into headers using the `trailer-` prefix. */
+fun muxTrailers(headers: Headers, trailers: Headers): Headers {
+    val out = headers.toMutableMap()
+    for ((k, v) in trailers) out["trailer-${k.lowercase()}"] = v
+    return out
+}
+
+/** Per-RPC context for generated handlers: request metadata + trailer channel. */
+class HandlerContext(val headers: Headers = emptyMap()) {
+    private val _trailers = mutableMapOf<String, List<String>>()
+    fun setTrailer(key: String, value: String) {
+        _trailers[key] = (_trailers[key] ?: emptyList()) + value
+    }
+    val trailers: Headers get() = _trailers
+}
+
+const val CONTENT_TYPE_UNARY = "application/proto"
+const val CONTENT_TYPE_STREAM = "application/connect+proto"
 
 /** Reconstruct the exact RPCError from the server's connect-code/connect-error
  *  headers (the HTTP status alone is lossy). */
@@ -499,14 +563,19 @@ class OkHttpTransport(
     override suspend fun send(req: Request): Response {
         val r = buildRequest(req, "application/proto")
         val resp = await(r)
-        val body = resp.body?.bytes() ?: ByteArray(0)
-        val headers = resp.headers.toMultimap()
+        var body = resp.body?.bytes() ?: ByteArray(0)
+        val allHeaders = resp.headers.toMultimap()
         val status = resp.code
         resp.close()
+        if ((allHeaders.entries.firstOrNull { it.key.equals("content-encoding", true) }?.value?.firstOrNull()) == "gzip" && body.isNotEmpty()) {
+            body = gzipDecompress(body)
+        }
+        val (headers, trailers) = demuxTrailers(allHeaders)
         return Response(
             status = status,
             headers = headers,
             body = body,
+            trailers = trailers,
             error = if (status >= 300) rpcErrorFrom(status, headers, body) else null,
         )
     }
@@ -521,6 +590,7 @@ class OkHttpTransport(
             private val pushed = ArrayDeque<ByteArray>()
             private var ended = false
             private var err: RPCError? = null
+            private var trailers: Headers = emptyMap()
             override suspend fun recv(): ByteArray? {
                 // Drain buffered frames first, even after the END frame has
                 // been seen (frames emitted before the error must not drop).
@@ -539,8 +609,9 @@ class OkHttpTransport(
                 }
                 for (f in reader.push(chunk)) {
                     if (f.end) {
-                        val (code, message, details) = decodeEndStream(f.payload)
-                        if (code != 0) err = RPCError(code, message, details)
+                        val es = decodeEndStream(f.payload)
+                        if (es.metadata.isNotEmpty()) trailers = es.metadata
+                        if (es.code != 0) err = RPCError(es.code, es.message, es.details)
                         ended = true
                         break
                     }
@@ -549,6 +620,7 @@ class OkHttpTransport(
                 return if (pushed.isEmpty()) null else pushed.removeFirst()
             }
             override fun lastError(): RPCError? = err
+            override fun trailers(): Headers = trailers
             override fun cancel() {
                 body.close()
             }
@@ -558,7 +630,8 @@ class OkHttpTransport(
     private fun buildRequest(req: Request, cType: String): OkRequest {
         val b = OkRequest.Builder()
             .url(if (req.url.startsWith("http")) req.url else base + req.url)
-            .method(req.method, if (req.body != null) req.body!!.toRequestBody(null) else null)
+            .method("POST", if (req.body != null) req.body!!.toRequestBody(null) else null)
+        b.header("Accept-Encoding", "gzip")
         // Caller-supplied metadata (auth/tenant/token) first.
         for ((k, vs) in req.headers) {
             for (v in vs) b.addHeader(k, v)

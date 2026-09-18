@@ -30,7 +30,7 @@ public object EchoResponseKt {
     internal fun _build(): com.easyrpc.conformance.v1.EchoResponse = _builder.build()
 
     /**
-     * `string output = 1 [json_name = "output"];`
+     * `string output = 1;`
      */
     public var output: kotlin.String
       @kotlin.jvm.JvmName("getOutput")
@@ -40,13 +40,14 @@ public object EchoResponseKt {
         _builder.output = value
       }
     /**
-     * `string output = 1 [json_name = "output"];`
+     * `string output = 1;`
      */
     public fun clearOutput() {
       _builder.clearOutput()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.EchoResponse.copy(block: `com.easyrpc.conformance.v1`.EchoResponseKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.EchoResponse =
   `com.easyrpc.conformance.v1`.EchoResponseKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

@@ -7,27 +7,78 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 class ConformanceServiceClient(private val t: Transport) {
+  var lastTrailers: Map<String, List<String>> = emptyMap()
   suspend fun health(req: HealthRequest): HealthResponse {
-    val res = t.send(Request(url = "/v1/health", body = req.toByteArray()))
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Health", body = req.toByteArray()))
     res.error?.let{ throw it }
+    lastTrailers = res.trailers
     return HealthResponse.parseFrom(res.body)
   }
 
   suspend fun echo(req: EchoRequest): EchoResponse {
-    val res = t.send(Request(url = "/v1/echo", body = req.toByteArray()))
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Echo", body = req.toByteArray()))
     res.error?.let{ throw it }
+    lastTrailers = res.trailers
     return EchoResponse.parseFrom(res.body)
   }
 
   fun count(req: CountRequest): Flow<CountResponse> = flow {
-    val st = t.openStream(Request(url = "/v1/count", body = req.toByteArray()))
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/Count", body = frame(req.toByteArray())))
     while (true) { val p = st.recv() ?: break; emit(CountResponse.parseFrom(p)) }
+    st.lastError()?.let { throw it }
   }
 
   suspend fun fail(req: FailRequest): FailResponse {
-    val res = t.send(Request(url = "/v1/fail", body = req.toByteArray()))
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Fail", body = req.toByteArray()))
     res.error?.let{ throw it }
+    lastTrailers = res.trailers
     return FailResponse.parseFrom(res.body)
+  }
+
+  fun streamFail(req: StreamFailRequest): Flow<StreamFailResponse> = flow {
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/StreamFail", body = frame(req.toByteArray())))
+    while (true) { val p = st.recv() ?: break; emit(StreamFailResponse.parseFrom(p)) }
+    st.lastError()?.let { throw it }
+  }
+
+  suspend fun echoMeta(req: EchoMetaRequest): EchoMetaResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoMeta", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return EchoMetaResponse.parseFrom(res.body)
+  }
+
+  suspend fun big(req: BigRequest): BigResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Big", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return BigResponse.parseFrom(res.body)
+  }
+
+  suspend fun failDetails(req: FailDetailsRequest): FailDetailsResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/FailDetails", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return FailDetailsResponse.parseFrom(res.body)
+  }
+
+  fun streamFailDetails(req: StreamFailDetailsRequest): Flow<StreamFailDetailsResponse> = flow {
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/StreamFailDetails", body = frame(req.toByteArray())))
+    while (true) { val p = st.recv() ?: break; emit(StreamFailDetailsResponse.parseFrom(p)) }
+    st.lastError()?.let { throw it }
+  }
+
+  suspend fun echoTrailer(req: EchoTrailerRequest): EchoTrailerResponse {
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoTrailer", body = req.toByteArray()))
+    res.error?.let{ throw it }
+    lastTrailers = res.trailers
+    return EchoTrailerResponse.parseFrom(res.body)
+  }
+
+  fun countTrailer(req: CountTrailerRequest): Flow<CountTrailerResponse> = flow {
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/CountTrailer", body = frame(req.toByteArray())))
+    while (true) { val p = st.recv() ?: break; emit(CountTrailerResponse.parseFrom(p)) }
+    st.lastError()?.let { throw it }
   }
 
 }

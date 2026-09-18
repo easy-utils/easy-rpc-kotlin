@@ -33,28 +33,32 @@ class CioTransport(
 
     override suspend fun send(req: Request): Response {
         val resp = client.request(url(req.url)) {
-            method = HttpMethod.parse(req.method)
+            method = HttpMethod.Post
             req.headers.forEach { (k, vs) -> vs.forEach { v -> headers.append(k, v) } }
             // Default content-type ONLY when the caller did not set one — a
             // hardcoded proto value silently breaks the JSON codec.
             val hasCt = req.headers.keys.any { it.equals("content-type", ignoreCase = true) }
             if (!hasCt) header(HttpHeaders.ContentType, "application/proto")
+            header(HttpHeaders.AcceptEncoding, "gzip")
             req.body?.let { setBody(it) }
         }
-        val body = resp.readRawBytes()
+        var body = resp.readRawBytes()
         val status = resp.status.value
         // Real header map + shared error fallback chain (code/details survive).
-        val hdrs: Map<String, List<String>> = resp.headers.entries().associate { (k, _) -> k.lowercase() to (resp.headers.getAll(k) ?: emptyList()) }
-        return Response(status, hdrs, body,
+        val all: Map<String, List<String>> = resp.headers.entries().associate { (k, _) -> k.lowercase() to (resp.headers.getAll(k) ?: emptyList()) }
+        if ((all["content-encoding"]?.firstOrNull()) == "gzip" && body.isNotEmpty()) body = gzipDecompress(body)
+        val (hdrs, trailers) = demuxTrailers(all)
+        return Response(status, hdrs, body, trailers,
             if (status >= 300) rpcErrorFrom(status, hdrs, body) else null)
     }
 
     override suspend fun openStream(req: Request): Stream {
         val resp = client.request(url(req.url)) {
-            method = HttpMethod.parse(req.method)
+            method = HttpMethod.Post
             req.headers.forEach { (k, vs) -> vs.forEach { v -> headers.append(k, v) } }
             val hasCt2 = req.headers.keys.any { it.equals("content-type", ignoreCase = true) }
             if (!hasCt2) header(HttpHeaders.ContentType, "application/connect+proto")
+            header("Connect-Accept-Encoding", "gzip")
             req.body?.let { setBody(it) }
         }
         val bodyBytes = resp.readRawBytes()
@@ -64,11 +68,13 @@ class CioTransport(
         val reader = FrameReader()
         var frames = reader.push(bodyBytes)
         var err: RPCError? = null
+        var trailers: Map<String, List<String>> = emptyMap()
         val endedIdx = frames.indexOfFirst { it.end }
         if (endedIdx >= 0) {
             val endFrame = frames[endedIdx]
-            val (code, message, details) = decodeEndStream(endFrame.payload)
-            if (code != 0) err = RPCError(code, message, details)
+            val es = decodeEndStream(endFrame.payload)
+            if (es.metadata.isNotEmpty()) trailers = es.metadata
+            if (es.code != 0) err = RPCError(es.code, es.message, es.details)
             frames = frames.subList(0, endedIdx)
         } else {
             try { reader.finish() } catch (e: RPCError) { err = e }
@@ -77,6 +83,7 @@ class CioTransport(
             private val pushed = ArrayDeque(frames.map { it.payload })
             override suspend fun recv(): ByteArray? = pushed.removeFirstOrNull()
             override fun lastError(): RPCError? = err
+            override fun trailers(): Map<String, List<String>> = trailers
             override fun cancel() {}
         }
     }

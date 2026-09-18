@@ -30,7 +30,7 @@ public object CountRequestKt {
     internal fun _build(): com.easyrpc.conformance.v1.CountRequest = _builder.build()
 
     /**
-     * `int32 count = 1 [json_name = "count"];`
+     * `int32 count = 1;`
      */
     public var count: kotlin.Int
       @kotlin.jvm.JvmName("getCount")
@@ -40,13 +40,14 @@ public object CountRequestKt {
         _builder.count = value
       }
     /**
-     * `int32 count = 1 [json_name = "count"];`
+     * `int32 count = 1;`
      */
     public fun clearCount() {
       _builder.clearCount()
     }
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.CountRequest.copy(block: `com.easyrpc.conformance.v1`.CountRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.CountRequest =
   `com.easyrpc.conformance.v1`.CountRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

@@ -30,6 +30,7 @@ public object HealthRequestKt {
     internal fun _build(): com.easyrpc.conformance.v1.HealthRequest = _builder.build()
   }
 }
+@kotlin.jvm.JvmSynthetic
 public inline fun com.easyrpc.conformance.v1.HealthRequest.copy(block: `com.easyrpc.conformance.v1`.HealthRequestKt.Dsl.() -> kotlin.Unit): com.easyrpc.conformance.v1.HealthRequest =
   `com.easyrpc.conformance.v1`.HealthRequestKt.Dsl._create(this.toBuilder()).apply { block() }._build()
 

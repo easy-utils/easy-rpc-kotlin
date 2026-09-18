@@ -148,6 +148,7 @@ class CronetTransport(
             private var ended = false
             private var streamErr: RPCError? = null
 
+            private var streamTrailers: Map<String, List<String>> = emptyMap()
             override suspend fun recv(): ByteArray? {
                 if (pushed.isNotEmpty()) return pushed.removeFirst()
                 if (ended) return null
@@ -171,8 +172,9 @@ class CronetTransport(
                     val endIdx = frames.indexOfFirst { it.end }
                     if (endIdx >= 0) {
                         val endFrame = frames[endIdx]
-                        val (code, message, details) = decodeEndStream(endFrame.payload)
-                        if (code != 0) streamErr = RPCError(code, message, details)
+                        val es = decodeEndStream(endFrame.payload)
+                        if (es.metadata.isNotEmpty()) streamTrailers = es.metadata
+                        if (es.code != 0) streamErr = RPCError(es.code, es.message, es.details)
                         frames = frames.subList(0, endIdx)
                         frames.forEach { pushed.addLast(it.payload) }
                         ended = true
@@ -186,6 +188,8 @@ class CronetTransport(
             }
 
             override fun lastError(): RPCError? = streamErr
+
+            override fun trailers(): Map<String, List<String>> = streamTrailers
 
             override fun cancel() {
                 try {
@@ -202,7 +206,7 @@ class CronetTransport(
         stream: Boolean,
     ): UrlRequest {
         val builder = engine.newUrlRequestBuilder(url(req.url), callback, CALLBACK_EXECUTOR)
-            .setHttpMethod(req.method)
+            .setHttpMethod("POST")
         // Caller-supplied headers first; default content-type ONLY when the
         // caller did not set one. The default differs per call shape — a
         // server-stream needs `application/connect+proto`, unary
@@ -220,11 +224,13 @@ class CronetTransport(
 
     private fun toResponse(info: UrlResponseInfo, body: ByteArray): Response {
         val status = info.httpStatusCode
-        val headers = info.allHeaders.entries.associate { (k, v) -> k.lowercase() to v }
+        val all = info.allHeaders.entries.associate { (k, v) -> k.lowercase() to v }
+        val (headers, trailers) = demuxTrailers(all)
         return Response(
             status,
             headers,
             body,
+            trailers,
             if (status >= 300) rpcErrorFrom(status, headers, body) else null,
         )
     }
