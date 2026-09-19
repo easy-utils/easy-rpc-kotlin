@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# protoc-gen-pbandk wrapper for easy-rpc-kotlin codegen.
+#
+# Downloads the pbandk 0.16 generator + runtime jars on first use, then runs the
+# plugin. Kotlin Multiplatform has no built-in proto codegen with proto3 JSON in
+# commonMain; pbandk provides both the binary and JSON codecs across jvm/native/
+# wasm/js, so it is the message runtime for the whole module.
+set -euo pipefail
+DIR="${EASYRPC_PBANDK_DIR:-/tmp/opencode/pbandk-bin}"
+JAVA_BIN="${JAVA_BIN:-${JAVA_HOME:-/opt/tools/mise/installs/java/17.0.2}/bin/java}"
+M=https://repo1.maven.org/maven2
+VER=0.16.0
+
+fetch() { # <maven-path>
+  local f; f="$(basename "$1")"
+  [ -f "$DIR/$f" ] || curl -sL "$M/$1" -o "$DIR/$f"
+}
+
+mkdir -p "$DIR"
+fetch "pro/streem/pbandk/protoc-gen-pbandk-lib-jvm/$VER/protoc-gen-pbandk-lib-jvm-$VER.jar"
+fetch "pro/streem/pbandk/pbandk-runtime-jvm/$VER/pbandk-runtime-jvm-$VER.jar"
+fetch "pro/streem/pbandk/pbandk-protos/$VER/pbandk-protos-$VER.jar"
+fetch "org/jetbrains/kotlin/kotlin-stdlib/2.2.21/kotlin-stdlib-2.2.21.jar"
+fetch "com/google/protobuf/protobuf-java/4.28.0/protobuf-java-4.28.0.jar"
+fetch "org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/1.7.2/kotlinx-serialization-json-jvm-1.7.2.jar"
+fetch "org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.7.2/kotlinx-serialization-core-jvm-1.7.2.jar"
+
+CP="$DIR/protoc-gen-pbandk-lib-jvm-$VER.jar:$DIR/pbandk-runtime-jvm-$VER.jar:$DIR/pbandk-protos-$VER.jar:$DIR/kotlin-stdlib-2.2.21.jar:$DIR/protobuf-java-4.28.0.jar:$DIR/kotlinx-serialization-json-jvm-1.7.2.jar:$DIR/kotlinx-serialization-core-jvm-1.7.2.jar"
+exec "$JAVA_BIN" -cp "$CP" pbandk.gen.MainKt "$@"
