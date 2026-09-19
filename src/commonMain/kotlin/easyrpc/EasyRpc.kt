@@ -2,6 +2,10 @@ package easyrpc
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import pbandk.decodeFromByteArray
+import pbandk.encodeToByteArray
+import pbandk.json.decodeFromJsonString
+import pbandk.json.encodeToJsonString
 
 /** Multi-value headers. */
 typealias Headers = Map<String, List<String>>
@@ -349,6 +353,50 @@ class HandlerContext(val headers: Headers = emptyMap()) {
 
 const val CONTENT_TYPE_UNARY = "application/proto"
 const val CONTENT_TYPE_STREAM = "application/connect+proto"
+const val CONTENT_TYPE_UNARY_JSON = "application/json"
+const val CONTENT_TYPE_STREAM_JSON = "application/connect+json"
+
+/** Message codec: proto binary (default) or proto3 JSON. */
+const val KIND_PROTO = "proto"
+const val KIND_JSON = "json"
+
+/** Map a Content-Type to a codec, or null when unsupported. */
+fun contentKindOf(contentType: String?): String? {
+    val ct = (contentType ?: "").split(";").first().trim().lowercase()
+    return when (ct) {
+        "application/proto", "application/connect+proto" -> KIND_PROTO
+        "application/json", "application/connect+json" -> KIND_JSON
+        else -> null
+    }
+}
+
+/** True when the content type denotes the streaming shape. */
+fun isStreamContentType(contentType: String?): Boolean {
+    val ct = (contentType ?: "").split(";").first().trim().lowercase()
+    return ct == "application/connect+proto" || ct == "application/connect+json"
+}
+
+/** The response Content-Type for a shape + codec. */
+fun contentTypeFor(stream: Boolean, kind: String): String = if (kind == KIND_JSON) {
+    if (stream) CONTENT_TYPE_STREAM_JSON else CONTENT_TYPE_UNARY_JSON
+} else {
+    if (stream) CONTENT_TYPE_STREAM else CONTENT_TYPE_UNARY
+}
+
+/** Encode a pbandk message in the given codec. */
+@OptIn(pbandk.ExperimentalProtoJson::class)
+fun <T : pbandk.Message> encodeMsg(msg: T, kind: String): ByteArray =
+    if (kind == KIND_JSON) msg.encodeToJsonString().encodeToByteArray() else msg.encodeToByteArray()
+
+/** Decode bytes into a pbandk message in the given codec. JSON ignores unknown
+ * fields (matching Connect / protojson). */
+@OptIn(pbandk.ExperimentalProtoJson::class)
+fun <T : pbandk.Message> decodeMsg(data: ByteArray, companion: pbandk.Message.Companion<T>, kind: String): T =
+    if (kind == KIND_JSON) {
+        companion.decodeFromJsonString(data.decodeToString(), pbandk.json.JsonConfig(ignoreUnknownFieldsInInput = true))
+    } else {
+        companion.decodeFromByteArray(data)
+    }
 
 /** Reconstruct the exact RPCError from the server's connect-code/connect-error
  *  headers (the HTTP status alone is lossy). */

@@ -10,103 +10,118 @@ import kotlinx.coroutines.flow.flow
 
 class ConformanceServiceClient(private val t: Transport) {
   var lastTrailers: Map<String, List<String>> = emptyMap()
-  suspend fun health(req: HealthRequest): HealthResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Health", body = req.encodeToByteArray()))
+  suspend fun health(req: HealthRequest, kind: String = KIND_PROTO): HealthResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Health", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return HealthResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, HealthResponse.Companion, kind)
   }
 
-  suspend fun echo(req: EchoRequest): EchoResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Echo", body = req.encodeToByteArray()))
+  suspend fun echo(req: EchoRequest, kind: String = KIND_PROTO): EchoResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Echo", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return EchoResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, EchoResponse.Companion, kind)
   }
 
-  fun count(req: CountRequest): Flow<CountResponse> = flow {
-    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/Count", body = frame(req.encodeToByteArray())))
-    while (true) { val p = st.recv() ?: break; emit(CountResponse.decodeFromByteArray(p)) }
+  fun count(req: CountRequest, kind: String = KIND_PROTO): Flow<CountResponse> = flow {
+    val ct = contentTypeFor(true, kind)
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/Count", headers = mapOf("content-type" to listOf(ct)), body = frame(encodeMsg(req, kind))))
+    while (true) { val p = st.recv() ?: break; emit(decodeMsg(p, CountResponse.Companion, kind)) }
     st.lastError()?.let { throw it }
   }
 
-  suspend fun fail(req: FailRequest): FailResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Fail", body = req.encodeToByteArray()))
+  suspend fun fail(req: FailRequest, kind: String = KIND_PROTO): FailResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Fail", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return FailResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, FailResponse.Companion, kind)
   }
 
-  fun streamFail(req: StreamFailRequest): Flow<StreamFailResponse> = flow {
-    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/StreamFail", body = frame(req.encodeToByteArray())))
-    while (true) { val p = st.recv() ?: break; emit(StreamFailResponse.decodeFromByteArray(p)) }
+  fun streamFail(req: StreamFailRequest, kind: String = KIND_PROTO): Flow<StreamFailResponse> = flow {
+    val ct = contentTypeFor(true, kind)
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/StreamFail", headers = mapOf("content-type" to listOf(ct)), body = frame(encodeMsg(req, kind))))
+    while (true) { val p = st.recv() ?: break; emit(decodeMsg(p, StreamFailResponse.Companion, kind)) }
     st.lastError()?.let { throw it }
   }
 
-  suspend fun echoMeta(req: EchoMetaRequest): EchoMetaResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoMeta", body = req.encodeToByteArray()))
+  suspend fun echoMeta(req: EchoMetaRequest, kind: String = KIND_PROTO): EchoMetaResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoMeta", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return EchoMetaResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, EchoMetaResponse.Companion, kind)
   }
 
-  suspend fun big(req: BigRequest): BigResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Big", body = req.encodeToByteArray()))
+  suspend fun big(req: BigRequest, kind: String = KIND_PROTO): BigResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Big", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return BigResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, BigResponse.Companion, kind)
   }
 
-  suspend fun failDetails(req: FailDetailsRequest): FailDetailsResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/FailDetails", body = req.encodeToByteArray()))
+  suspend fun failDetails(req: FailDetailsRequest, kind: String = KIND_PROTO): FailDetailsResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/FailDetails", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return FailDetailsResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, FailDetailsResponse.Companion, kind)
   }
 
-  fun streamFailDetails(req: StreamFailDetailsRequest): Flow<StreamFailDetailsResponse> = flow {
-    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/StreamFailDetails", body = frame(req.encodeToByteArray())))
-    while (true) { val p = st.recv() ?: break; emit(StreamFailDetailsResponse.decodeFromByteArray(p)) }
+  fun streamFailDetails(req: StreamFailDetailsRequest, kind: String = KIND_PROTO): Flow<StreamFailDetailsResponse> = flow {
+    val ct = contentTypeFor(true, kind)
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/StreamFailDetails", headers = mapOf("content-type" to listOf(ct)), body = frame(encodeMsg(req, kind))))
+    while (true) { val p = st.recv() ?: break; emit(decodeMsg(p, StreamFailDetailsResponse.Companion, kind)) }
     st.lastError()?.let { throw it }
   }
 
-  suspend fun echoTrailer(req: EchoTrailerRequest): EchoTrailerResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoTrailer", body = req.encodeToByteArray()))
+  suspend fun echoTrailer(req: EchoTrailerRequest, kind: String = KIND_PROTO): EchoTrailerResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoTrailer", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return EchoTrailerResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, EchoTrailerResponse.Companion, kind)
   }
 
-  fun countTrailer(req: CountTrailerRequest): Flow<CountTrailerResponse> = flow {
-    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/CountTrailer", body = frame(req.encodeToByteArray())))
-    while (true) { val p = st.recv() ?: break; emit(CountTrailerResponse.decodeFromByteArray(p)) }
+  fun countTrailer(req: CountTrailerRequest, kind: String = KIND_PROTO): Flow<CountTrailerResponse> = flow {
+    val ct = contentTypeFor(true, kind)
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/CountTrailer", headers = mapOf("content-type" to listOf(ct)), body = frame(encodeMsg(req, kind))))
+    while (true) { val p = st.recv() ?: break; emit(decodeMsg(p, CountTrailerResponse.Companion, kind)) }
     st.lastError()?.let { throw it }
   }
 
-  suspend fun echoBytes(req: EchoBytesRequest): EchoBytesResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoBytes", body = req.encodeToByteArray()))
+  suspend fun echoBytes(req: EchoBytesRequest, kind: String = KIND_PROTO): EchoBytesResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/EchoBytes", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return EchoBytesResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, EchoBytesResponse.Companion, kind)
   }
 
-  suspend fun sleep(req: SleepRequest): SleepResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Sleep", body = req.encodeToByteArray()))
+  suspend fun sleep(req: SleepRequest, kind: String = KIND_PROTO): SleepResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Sleep", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return SleepResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, SleepResponse.Companion, kind)
   }
 
-  suspend fun empty(req: EmptyRequest): EmptyResponse {
-    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Empty", body = req.encodeToByteArray()))
+  suspend fun empty(req: EmptyRequest, kind: String = KIND_PROTO): EmptyResponse {
+    val ct = contentTypeFor(false, kind)
+    val res = t.send(Request(url = "/easyrpc.conformance.v1.ConformanceService/Empty", headers = mapOf("content-type" to listOf(ct)), body = encodeMsg(req, kind)))
     res.error?.let{ throw it }
     lastTrailers = res.trailers
-    return EmptyResponse.decodeFromByteArray(res.body)
+    return decodeMsg(res.body, EmptyResponse.Companion, kind)
   }
 
-  fun bigStream(req: BigStreamRequest): Flow<BigStreamResponse> = flow {
-    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/BigStream", body = frame(req.encodeToByteArray())))
-    while (true) { val p = st.recv() ?: break; emit(BigStreamResponse.decodeFromByteArray(p)) }
+  fun bigStream(req: BigStreamRequest, kind: String = KIND_PROTO): Flow<BigStreamResponse> = flow {
+    val ct = contentTypeFor(true, kind)
+    val st = t.openStream(Request(url = "/easyrpc.conformance.v1.ConformanceService/BigStream", headers = mapOf("content-type" to listOf(ct)), body = frame(encodeMsg(req, kind))))
+    while (true) { val p = st.recv() ?: break; emit(decodeMsg(p, BigStreamResponse.Companion, kind)) }
     st.lastError()?.let { throw it }
   }
 
